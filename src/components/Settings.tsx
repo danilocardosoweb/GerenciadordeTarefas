@@ -91,14 +91,20 @@ const UserSettings = () => {
         e.preventDefault();
         if (!inviteEmail) return;
 
+        if (users.some(u => u.email.toLowerCase() === inviteEmail.toLowerCase())) {
+            addToast('Este e-mail já está em uso.', 'error');
+            return;
+        }
+
         const newUser = {
-            id: Date.now().toString(),
+            id: `u${Date.now()}`,
             email: inviteEmail,
             name: inviteEmail.split('@')[0], // Simple name generation
-            role: inviteRole
+            role: inviteRole,
+            password: 'password123', // Default password for invited users
         };
         setUsers([...users, newUser]);
-        addToast(`Convite enviado para ${inviteEmail}`, 'success');
+        addToast(`Convite enviado para ${inviteEmail}. A senha temporária é "password123".`, 'success');
         setInviteEmail('');
         setInviteRole(UserRole.Membro);
     };

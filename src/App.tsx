@@ -9,6 +9,7 @@ import ReportsPage from './components/Reports';
 import SettingsModal from './components/Settings';
 import Toast from './components/common/Toast';
 import LoginScreen from './components/Login';
+import RegisterScreen from './components/Register';
 import { exportToExcel, debounce } from './utils/helpers';
 
 
@@ -19,9 +20,9 @@ const initialContacts: Contact[] = [
 ];
 
 const initialUsers: User[] = [
-    { id: 'u1', name: 'Admin User', email: 'admin@taskmaster.pro', role: UserRole.Admin },
-    { id: 'u2', name: 'Alice', email: 'alice@example.com', role: UserRole.Membro },
-    { id: 'u3', name: 'Bob', email: 'bob@example.com', role: UserRole.Membro },
+    { id: 'u1', name: 'Admin User', email: 'admin@taskmaster.pro', role: UserRole.Admin, password: 'password' },
+    { id: 'u2', name: 'Alice', email: 'alice@example.com', role: UserRole.Membro, password: 'password' },
+    { id: 'u3', name: 'Bob', email: 'bob@example.com', role: UserRole.Membro, password: 'password' },
 ];
 
 const initialGroups: Group[] = [
@@ -71,6 +72,8 @@ export default function App() {
   const [activePage, setActivePage] = useState('Dashboard');
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [authView, setAuthView] = useState<'login' | 'register'>('login');
+
 
   // Local state for theme and current user session
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (localStorage.getItem('theme') as 'light' | 'dark' | null) || 'light');
@@ -152,12 +155,35 @@ export default function App() {
       await new Promise(res => setTimeout(res, 500));
       const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
       
-      if (user && password === 'password') { 
+      if (user && user.password === password) { 
           setCurrentUser(user);
           addToast(`Bem-vindo de volta, ${user.name}!`, 'success');
           return true;
       }
       return false;
+  };
+
+  const handleRegister = async (name: string, email: string, password: string): Promise<boolean> => {
+    if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
+        addToast('Este e-mail já está em uso.', 'error');
+        return false;
+    }
+
+    const newUser: User = {
+        id: `u${Date.now()}`,
+        name,
+        email,
+        password,
+        role: UserRole.Membro, // Default role for new sign-ups
+    };
+
+    setUsers(prevUsers => [...prevUsers, newUser]);
+    // This will trigger the useEffect to save data
+    
+    // Automatically log in the new user
+    setCurrentUser(newUser);
+    addToast(`Bem-vindo, ${name}! Sua conta foi criada.`, 'success');
+    return true;
   };
 
   const handleLogout = () => {
@@ -237,7 +263,11 @@ export default function App() {
     return (
       <>
         <div className="flex items-center justify-center h-screen bg-gray-100 dark:bg-gray-900">
-            <LoginScreen onLogin={handleLogin} />
+            {authView === 'login' ? (
+                <LoginScreen onLogin={handleLogin} onSwitchToRegister={() => setAuthView('register')} />
+            ) : (
+                <RegisterScreen onRegister={handleRegister} onSwitchToLogin={() => setAuthView('login')} />
+            )}
         </div>
         <div className="fixed top-5 right-5 z-50">
           {toasts.map(toast => <Toast key={toast.id} message={toast} onDismiss={removeToast} />)}

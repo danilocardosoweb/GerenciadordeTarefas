@@ -73,6 +73,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  password?: string; // Optional for existing users, required for new ones
 }
 
 export interface Alert {
