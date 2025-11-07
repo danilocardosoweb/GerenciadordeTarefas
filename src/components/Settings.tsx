@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, UserRole } from '../types';
+import { Settings, UserRole, User } from '../types';
 import Modal from './common/Modal';
 import { useAppContext } from '../App';
 import { mockTestEmail } from '../services/mockApi';
@@ -75,38 +75,62 @@ const UserSettings = () => {
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteRole, setInviteRole] = useState<UserRole>(UserRole.Membro);
 
-    const handleRoleChange = (userId: string, newRole: UserRole) => {
-        setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
-        addToast('Função do usuário atualizada!', 'success');
-    };
-
-    const handleRemoveUser = (userId: string) => {
-        if (window.confirm('Tem certeza que deseja remover este usuário?')) {
-            setUsers(users.filter(u => u.id !== userId));
-            addToast('Usuário removido!', 'success');
+    const handleRoleChange = async (userId: string, newRole: UserRole) => {
+        try {
+            const response = await fetch(`/api/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: newRole })
+            });
+            if(!response.ok) throw new Error("Failed to update role");
+            setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+            addToast('Função do usuário atualizada!', 'success');
+        } catch(err) {
+            addToast('Erro ao atualizar função.', 'error');
         }
     };
 
-    const handleInvite = (e: React.FormEvent) => {
+    const handleRemoveUser = async (userId: string) => {
+        if (window.confirm('Tem certeza que deseja remover este usuário?')) {
+            try {
+                await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+                setUsers(prev => prev.filter(u => u.id !== userId));
+                addToast('Usuário removido!', 'success');
+            } catch(err) {
+                addToast('Erro ao remover usuário.', 'error');
+            }
+        }
+    };
+
+    const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!inviteEmail) return;
 
-        if (users.some(u => u.email.toLowerCase() === inviteEmail.toLowerCase())) {
-            addToast('Este e-mail já está em uso.', 'error');
-            return;
-        }
-
-        const newUser = {
-            id: `u${Date.now()}`,
+        const payload = {
             email: inviteEmail,
-            name: inviteEmail.split('@')[0], // Simple name generation
+            name: inviteEmail.split('@')[0],
             role: inviteRole,
             password: 'password123', // Default password for invited users
         };
-        setUsers([...users, newUser]);
-        addToast(`Convite enviado para ${inviteEmail}. A senha temporária é "password123".`, 'success');
-        setInviteEmail('');
-        setInviteRole(UserRole.Membro);
+
+        try {
+            const response = await fetch('/api/users/invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+             if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to invite user');
+            }
+            const newUser = await response.json();
+            setUsers(prev => [...prev, newUser]);
+            addToast(`Convite enviado para ${inviteEmail}.`, 'success');
+            setInviteEmail('');
+            setInviteRole(UserRole.Membro);
+        } catch (err) {
+            addToast('Erro ao convidar usuário. O e-mail já pode existir.', 'error');
+        }
     };
 
     return (
@@ -159,13 +183,23 @@ const GroupSettings = () => {
     const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
     const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
-    const handleCreateGroup = (e: React.FormEvent) => {
+    const handleCreateGroup = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newGroupName) return;
-        const newGroup = { id: Date.now().toString(), name: newGroupName, memberIds: [] };
-        setGroups([...groups, newGroup]);
-        setNewGroupName('');
-        addToast(`Grupo "${newGroupName}" criado!`, 'success');
+        try {
+            const response = await fetch('/api/groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newGroupName })
+            });
+            if(!response.ok) throw new Error("Failed to create group");
+            const newGroup = await response.json();
+            setGroups(prev => [...prev, { ...newGroup, memberIds: [] }]);
+            setNewGroupName('');
+            addToast(`Grupo "${newGroupName}" criado!`, 'success');
+        } catch(err) {
+            addToast('Erro ao criar grupo.', 'error');
+        }
     };
 
     const handleEditMembers = (group: typeof groups[0]) => {
@@ -177,18 +211,32 @@ const GroupSettings = () => {
         setSelectedMembers(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
     };
 
-    const handleSaveMembers = () => {
+    const handleSaveMembers = async () => {
         if (!editingGroupId) return;
-        setGroups(groups.map(g => g.id === editingGroupId ? { ...g, memberIds: selectedMembers } : g));
-        addToast('Membros do grupo atualizados!', 'success');
-        setEditingGroupId(null);
-        setSelectedMembers([]);
+        try {
+            await fetch('/api/groups/members', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ group_id: editingGroupId, memberIds: selectedMembers })
+            });
+            setGroups(prev => prev.map(g => g.id === editingGroupId ? { ...g, memberIds: selectedMembers } : g));
+            addToast('Membros do grupo atualizados!', 'success');
+            setEditingGroupId(null);
+            setSelectedMembers([]);
+        } catch(err) {
+            addToast('Erro ao salvar membros.', 'error');
+        }
     };
     
-    const handleDeleteGroup = (groupId: string) => {
+    const handleDeleteGroup = async (groupId: string) => {
         if (window.confirm("Tem certeza que deseja remover este grupo?")) {
-            setGroups(groups.filter(g => g.id !== groupId));
-            addToast('Grupo removido!', 'success');
+            try {
+                await fetch(`/api/groups/${groupId}`, { method: 'DELETE' });
+                setGroups(prev => prev.filter(g => g.id !== groupId));
+                addToast('Grupo removido!', 'success');
+            } catch(err) {
+                addToast('Erro ao remover grupo.', 'error');
+            }
         }
     }
 

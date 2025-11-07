@@ -4,14 +4,9 @@ import Modal from './common/Modal';
 import { useAppContext } from '../App';
 
 const ContactForm: React.FC<{ contact: Contact | null; onClose: () => void }> = ({ contact, onClose }) => {
-    const { contacts, setContacts, addToast, addAlert } = useAppContext();
-    const [formData, setFormData] = useState<Contact>(contact || {
-      id: Date.now().toString(),
-      name: '',
-      email: '',
-      phone: '',
-      company: '',
-      role: '',
+    const { setContacts, addToast } = useAppContext();
+    const [formData, setFormData] = useState<Omit<Contact, 'id'>>(contact || {
+      name: '', email: '', phone: '', company: '', role: '',
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -19,17 +14,35 @@ const ContactForm: React.FC<{ contact: Contact | null; onClose: () => void }> = 
       setFormData(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (contact) {
-            setContacts(contacts.map(c => (c.id === contact.id ? formData : c)));
-            addToast('Contato atualizado!', 'success');
-        } else {
-            setContacts([formData, ...contacts]);
-            addToast('Contato adicionado!', 'success');
-            addAlert(`Novo contato: ${formData.name}.`, 'info');
+        try {
+            if (contact) {
+                const response = await fetch(`/api/contacts/${contact.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                if(!response.ok) throw new Error("Failed to update contact");
+                const updatedContact = await response.json();
+                setContacts(prev => prev.map(c => (c.id === contact.id ? updatedContact : c)));
+                addToast('Contato atualizado!', 'success');
+            } else {
+                const response = await fetch('/api/contacts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                if(!response.ok) throw new Error("Failed to create contact");
+                const newContact = await response.json();
+                setContacts(prev => [newContact, ...prev]);
+                addToast('Contato adicionado!', 'success');
+            }
+            onClose();
+        } catch(err) {
+            console.error(err);
+            addToast('Erro ao salvar contato.', 'error');
         }
-        onClose();
     };
 
     return (
@@ -48,7 +61,7 @@ const ContactForm: React.FC<{ contact: Contact | null; onClose: () => void }> = 
 };
 
 const ContactsPage: React.FC = () => {
-    const { contacts, setContacts, tasks, setTasks, addToast, addAlert } = useAppContext();
+    const { contacts, setContacts, addToast } = useAppContext();
     const [isModalOpen, setModalOpen] = useState(false);
     const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
@@ -62,18 +75,16 @@ const ContactsPage: React.FC = () => {
       setModalOpen(true);
     };
   
-    const handleDelete = (contactId: string) => {
-      if (window.confirm("Tem certeza? Excluir um contato irá removê-lo de todas as tarefas associadas.")) {
-        const contactName = contacts.find(c => c.id === contactId)?.name || 'Contato';
-        // Remove contact reference from tasks
-        setTasks(tasks.map(task => ({
-          ...task,
-          responsible: task.responsible === contactId ? null : task.responsible,
-          participants: task.participants.filter(pId => pId !== contactId),
-        })));
-        setContacts(contacts.filter(c => c.id !== contactId));
-        addToast('Contato excluído!', 'success');
-        addAlert(`Contato "${contactName}" foi excluído.`, 'warning');
+    const handleDelete = async (contactId: string) => {
+      if (window.confirm("Tem certeza? Excluir um contato irá removê-lo de todas as tarefas associadas (esta ação é permanente no banco de dados).")) {
+        try {
+            const response = await fetch(`/api/contacts/${contactId}`, { method: 'DELETE' });
+            if(!response.ok) throw new Error("Failed to delete contact");
+            setContacts(prev => prev.filter(c => c.id !== contactId));
+            addToast('Contato excluído!', 'success');
+        } catch(err) {
+            addToast('Erro ao excluir contato. Ele pode estar sendo usado.', 'error');
+        }
       }
     };
     
