@@ -1,3 +1,4 @@
+import React from 'react';
 
 export enum Priority {
   Baixa = 'Baixa',
@@ -13,10 +14,27 @@ export enum Status {
   Atrasada = 'Atrasada',
 }
 
+export enum UserRole {
+  Admin = 'Admin',
+  Membro = 'Membro',
+}
+
+export enum TaskVisibility {
+  Public = 'Pública',
+  Private = 'Privada',
+  Group = 'Grupo',
+}
+
 export interface ChangeLog {
   timestamp: string;
   user: string;
   change: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  memberIds: string[];
 }
 
 export interface Task {
@@ -27,7 +45,8 @@ export interface Task {
   duration: number; // in minutes
   priority: Priority;
   status: Status;
-  reminderDays: number;
+  reminderValue: number;
+  reminderUnit: 'days' | 'hours';
   responsible: string | null; // contact id
   participants: string[]; // contact ids
   tags: string[];
@@ -35,6 +54,9 @@ export interface Task {
   comments: string[];
   history: ChangeLog[];
   createdAt: string;
+  creatorId: string;
+  visibility: TaskVisibility;
+  groupId: string | null;
 }
 
 export interface Contact {
@@ -44,6 +66,13 @@ export interface Contact {
   phone: string;
   company: string;
   role: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
 }
 
 export interface Alert {
@@ -66,3 +95,18 @@ export interface ToastMessage {
   message: string;
   type: 'success' | 'error' | 'info';
 }
+
+export type AppContextType = {
+  addToast: (message: string, type: ToastMessage['type']) => void;
+  addAlert: (message: string, type: Alert['type']) => void;
+  tasks: Task[];
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+  contacts: Contact[];
+  setContacts: React.Dispatch<React.SetStateAction<Contact[]>>;
+  users: User[];
+  setUsers: React.Dispatch<React.SetStateAction<User[]>>;
+  groups: Group[];
+  setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
+  settings: Settings;
+  currentUser: User;
+};

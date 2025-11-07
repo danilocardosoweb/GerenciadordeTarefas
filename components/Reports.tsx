@@ -59,7 +59,7 @@ const ReportsPage: React.FC<ReportsPageProps> = ({ tasks, contacts }) => {
           `}
         </style>
         <header className="border-b-2 border-gray-200 dark:border-gray-700 pb-4 mb-8">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Relatório de Atividades - TaskMaster Pro</h2>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Relatório de Atividades - Gerenciador de Tarefas</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">Gerado em: {new Date().toLocaleString('pt-BR')}</p>
         </header>
 

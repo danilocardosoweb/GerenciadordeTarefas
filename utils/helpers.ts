@@ -2,6 +2,22 @@ import { Task, Contact } from '../types';
 import saveAs from 'file-saver';
 import * as XLSX from 'xlsx';
 
+// --- Debounce Utility ---
+export const debounce = <F extends (...args: any[]) => any>(func: F, waitFor: number) => {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  const debounced = (...args: Parameters<F>) => {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
+    timeout = setTimeout(() => func(...args), waitFor);
+  };
+
+  return debounced as (...args: Parameters<F>) => void;
+};
+
+
 // --- Date Utils ---
 export const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
@@ -34,14 +50,29 @@ export const generateICS = (task: Task, responsible: Contact | null, participant
   const startDate = new Date(task.dueDate);
   const endDate = new Date(startDate.getTime() + task.duration * 60000);
   
+  let alarmLines: string[] = [];
+  if (task.reminderValue > 0) {
+    const triggerValue = task.reminderValue;
+    const triggerUnit = task.reminderUnit === 'days' ? 'D' : 'H';
+    const timePrefix = task.reminderUnit === 'hours' ? 'T' : '';
+    
+    alarmLines = [
+        'BEGIN:VALARM',
+        'ACTION:DISPLAY',
+        'DESCRIPTION:Lembrete',
+        `TRIGGER:-P${timePrefix}${triggerValue}${triggerUnit}`,
+        'END:VALARM'
+    ];
+  }
+
   let icsString = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//TaskMasterPro//EN',
+    'PRODID:-//GerenciadorDeTarefas//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:REQUEST',
     'BEGIN:VEVENT',
-    `UID:${task.id}@taskmaster.pro`,
+    `UID:${task.id}@gerenciador.tarefas`,
     `DTSTAMP:${toICSDate(new Date())}`,
     `DTSTART:${toICSDate(startDate)}`,
     `DTEND:${toICSDate(endDate)}`,
@@ -49,11 +80,7 @@ export const generateICS = (task: Task, responsible: Contact | null, participant
     `DESCRIPTION:${task.description.replace(/\n/g, '\\n')}`,
     `LOCATION:N/A`,
     `STATUS:CONFIRMED`,
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:Lembrete',
-    `TRIGGER:-P${task.reminderDays}D`,
-    'END:VALARM',
+    ...alarmLines
   ];
 
   if (responsible) {
@@ -97,5 +124,5 @@ export const exportToExcel = (tasks: Task[], contacts: Contact[]) => {
   const worksheet = XLSX.utils.json_to_sheet(tasksData);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Tarefas');
-  XLSX.writeFile(workbook, 'Tarefas_TaskMaster_Pro.xlsx');
+  XLSX.writeFile(workbook, 'Tarefas_Gerenciador_de_Tarefas.xlsx');
 };

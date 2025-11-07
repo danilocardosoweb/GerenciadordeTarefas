@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo } from 'react';
-import { Task, Contact, Priority, Status, ChangeLog } from '../types';
+import { Task, Contact, Priority, Status, ChangeLog, TaskVisibility } from '../types';
 import Modal from './common/Modal';
 import { useAppContext } from '../App';
 import { formatDate, formatDateTime, downloadICS } from '../utils/helpers';
@@ -54,28 +53,33 @@ const generateChangeLog = (oldTask: Task, newTask: Task, contacts: Contact[]): C
 };
 
 const TaskForm: React.FC<{ task: Task | null; onClose: () => void }> = ({ task, onClose }) => {
-  const { contacts, tasks, setTasks, addToast, addAlert } = useAppContext();
-  const [formData, setFormData] = useState<Task>(task || {
-    id: Date.now().toString(),
+  const { contacts, tasks, setTasks, addToast, addAlert, currentUser, groups } = useAppContext();
+  const [formData, setFormData] = useState<Omit<Task, 'id' | 'createdAt' | 'history'> & { id?: string, createdAt?: string, history?: ChangeLog[] }>(task || {
     name: '',
     description: '',
     dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().substring(0, 16),
     duration: 60,
     priority: Priority.Media,
     status: Status.Pendente,
-    reminderDays: 1,
+    reminderValue: 1,
+    reminderUnit: 'days',
     responsible: null,
     participants: [],
     tags: [],
     attachments: [],
     comments: [],
-    history: [],
-    createdAt: new Date().toISOString(),
+    creatorId: currentUser.id,
+    visibility: TaskVisibility.Public,
+    groupId: null,
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target;
+    const isNumber = type === 'number';
+    setFormData(prev => ({ ...prev, [name]: isNumber ? parseInt(value, 10) : value }));
+    if (name === "visibility" && value !== TaskVisibility.Group) {
+        setFormData(prev => ({ ...prev, groupId: null}));
+    }
   };
   
   const handleParticipantsChange = (contactId: string) => {
@@ -90,18 +94,23 @@ const TaskForm: React.FC<{ task: Task | null; onClose: () => void }> = ({ task, 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (task) { // Editing
-      const changes = generateChangeLog(task, formData, contacts);
-      const updatedTask = { ...formData, history: [...changes, ...task.history] };
+      const changes = generateChangeLog(task, formData as Task, contacts);
+      const updatedTask = { ...formData, history: [...changes, ...(task.history || [])] } as Task;
       setTasks(tasks.map(t => (t.id === task.id ? updatedTask : t)));
       addToast('Tarefa atualizada com sucesso!', 'success');
       addAlert(`Tarefa "${formData.name}" foi atualizada.`, 'info');
     } else { // Creating
-      const newHistoryEntry: ChangeLog = {
-          timestamp: new Date().toISOString(),
-          user: contacts.find(c => c.id === formData.responsible)?.name || 'Usuário',
-          change: 'Tarefa criada.'
+      const newTask: Task = {
+        ...formData,
+        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
+        history: [{
+            timestamp: new Date().toISOString(),
+            user: currentUser.name,
+            change: 'Tarefa criada.'
+        }],
       };
-      setTasks([{ ...formData, history: [newHistoryEntry] }, ...tasks]);
+      setTasks([newTask, ...tasks]);
       addToast('Tarefa criada com sucesso!', 'success');
       addAlert(`Nova tarefa "${formData.name}" foi criada.`, 'info');
     }
@@ -111,27 +120,81 @@ const TaskForm: React.FC<{ task: Task | null; onClose: () => void }> = ({ task, 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <form onSubmit={handleSubmit} className="space-y-4 md:col-span-2">
-          <input name="name" value={formData.name} onChange={handleChange} placeholder="Nome da Tarefa" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required />
-          <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Descrição" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" rows={4} />
-          <div className="grid grid-cols-2 gap-4">
-            <input type="datetime-local" name="dueDate" value={formData.dueDate.substring(0, 16)} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
-            <input type="number" name="duration" value={formData.duration} onChange={handleChange} placeholder="Duração (min)" className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
-          </div>
-           <div className="grid grid-cols-2 gap-4">
-            <select name="priority" value={formData.priority} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
-                {Object.values(Priority).map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-             <select name="status" value={formData.status} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
-                {Object.values(Status).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-           </div>
-           <select name="responsible" value={formData.responsible || ''} onChange={handleChange} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
-              <option value="">Selecione um responsável</option>
-              {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-           </select>
             <div>
-                <label className="font-medium">Participantes</label>
-                <div className="grid grid-cols-2 gap-2 mt-2 max-h-32 overflow-y-auto p-2 border rounded dark:border-gray-600">
+                <label htmlFor="task-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nome da Tarefa</label>
+                <input id="task-name" name="name" value={formData.name} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" required />
+            </div>
+            <div>
+                <label htmlFor="task-description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Descrição</label>
+                <textarea id="task-description" name="description" value={formData.description} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" rows={4} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label htmlFor="task-dueDate" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data de Vencimento</label>
+                    <input id="task-dueDate" type="datetime-local" name="dueDate" value={formData.dueDate.substring(0, 16)} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                </div>
+                <div>
+                    <label htmlFor="task-duration" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Duração (minutos)</label>
+                    <input id="task-duration" type="number" name="duration" value={formData.duration} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label htmlFor="task-priority" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Prioridade</label>
+                    <select id="task-priority" name="priority" value={formData.priority} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+                        {Object.values(Priority).map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label htmlFor="task-status" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                    <select id="task-status" name="status" value={formData.status} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+                        {Object.values(Status).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                </div>
+            </div>
+
+             <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Lembrete</label>
+              <div className="mt-1 flex items-center space-x-2">
+                  <input type="number" name="reminderValue" value={formData.reminderValue} onChange={handleChange} min="0" className="w-24 p-2 border rounded dark:bg-gray-700 dark:border-gray-600" />
+                  <select name="reminderUnit" value={formData.reminderUnit} onChange={handleChange} className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+                      <option value="days">dias antes</option>
+                      <option value="hours">horas antes</option>
+                  </select>
+              </div>
+            </div>
+
+           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <label htmlFor="task-visibility" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Visibilidade</label>
+                    <select id="task-visibility" name="visibility" value={formData.visibility} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+                        {Object.values(TaskVisibility).map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                </div>
+                {formData.visibility === TaskVisibility.Group && (
+                     <div>
+                        <label htmlFor="task-group" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Grupo</label>
+                        <select id="task-group" name="groupId" value={formData.groupId || ''} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+                            <option value="">Selecione um grupo</option>
+                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                    </div>
+                )}
+           </div>
+
+           <div>
+                <label htmlFor="task-responsible" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Responsável</label>
+                <select id="task-responsible" name="responsible" value={formData.responsible || ''} onChange={handleChange} className="mt-1 w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600">
+                  <option value="">Selecione um responsável</option>
+                  {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+               </select>
+           </div>
+           
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Participantes</label>
+                <div className="mt-2 grid grid-cols-2 gap-2 max-h-32 overflow-y-auto p-2 border rounded dark:border-gray-600">
                     {contacts.map(contact => (
                         <label key={contact.id} className="flex items-center space-x-2">
                             <input type="checkbox" checked={formData.participants.includes(contact.id)} onChange={() => handleParticipantsChange(contact.id)} />
@@ -149,7 +212,7 @@ const TaskForm: React.FC<{ task: Task | null; onClose: () => void }> = ({ task, 
         <div className="md:col-span-1 border-l border-gray-200 dark:border-gray-700 pl-4">
             <h3 className="text-lg font-bold mb-4">Histórico de Alterações</h3>
             <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                {formData.history && formData.history.length > 0 ? formData.history.map(log => (
+                {task?.history && task.history.length > 0 ? task.history.map(log => (
                     <div key={log.timestamp} className="flex items-start">
                          <div className="w-2 h-2 bg-indigo-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
                          <div className="flex-grow">
